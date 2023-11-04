@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "incremental": true,                  
+    "target": "ESNext",                         
+    "module": "CommonJS",                     
+    "lib": ["ESNext"],                         
+    "outDir": "./dist",                        
+    "tsBuildInfoFile": "./dist/tsbuildinfo.json",
+    "removeComments": false,               
+    "moduleResolution": "Node",            
+    "esModuleInterop": true,
+    "experimentalDecorators": true,        
+    "emitDecoratorMetadata": true,
+    "preserveConstEnums": true,
+    "resolveJsonModule": true,
+    "noImplicitOverride": true,
+  },
+  "include": [
+    "./src/**/*", 
+    "./lib/**/*", 
+    "./util/**/*",
+    "./db/**/*",
+    "./typings/**/*",
+    "./index.d.ts"
+  ],
+  "exclude": [
+    "package.json", 
+    "package-lock.json",
+    "node_modules",
+    "dist"
+  ]
+}
