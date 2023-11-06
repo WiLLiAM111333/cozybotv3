@@ -29,9 +29,9 @@ import {
   roleMention,
   channelMention,
   userMention,
-  Guild,
-  EmbedBuilder
+  Guild
 } from 'discord.js';
+import { DiscordLoggerLevel } from './DiscordLoggerLevel';
 
 const { bold, cursive, inlineCodeBlock } = DiscordFormatter;
 const { getCombinedStringArrayLength, isProduction } = Util;
@@ -265,7 +265,9 @@ export class DiscordLogger {
       //? Never log if there is no embed, could crash the bot as there is very rarely any extra content sent
       if(options.embeds) {
         const { embeds, files, pingModRole, content } = options;
-        const hook = await this.getWebHook(client, guildID);
+        const { level } = embeds[0]; // The log level can be retrieved from the first embed as its always the reaction to the event being handled in its method
+
+        const hook = await this.getWebHook(client, guildID, level);
 
         if(!hook) {
           return;
@@ -303,19 +305,21 @@ export class DiscordLogger {
    * @async
    * @param {CozyClient} client
    * @param {Snowflake} guildID
+   * @param {DiscordLoggerLevel} level
    * @param {?IDiscordLoggerConfig} config
    * @returns {Promise<Webhook>}
    */
-  private async getWebHook(client: CozyClient, guildID: Snowflake, config?: IDiscordLoggerConfig): Promise<Webhook> {
+  private async getWebHook(client: CozyClient, guildID: Snowflake, level: DiscordLoggerLevel, config?: IDiscordLoggerConfig): Promise<Webhook> {
     try {
       const cfg = config ?? await this.configManager.get(guildID);
+      const logChannelID = cfg.logChannelIDs[level];
 
-      if(!cfg?.logChannelID) {
+      if(!logChannelID) {
         return;
       }
 
       const guild = await client.guilds.fetch(guildID);
-      const channel = await guild.channels.fetch(cfg.logChannelID) as TextChannel;
+      const channel = await guild.channels.fetch(logChannelID) as TextChannel;
 
       const webHooks = await channel.fetchWebhooks();
       const hook = webHooks.find(hook => hook.owner.id === client.user.id);
@@ -323,66 +327,6 @@ export class DiscordLogger {
       return hook ?? await channel.createWebhook({ name: 'CozyBot Logger' });
     } catch (err) {
       this.handleError(err);
-    }
-  }
-
-  /**
-   * @description Returns an embed used for notifying members in server text channels or DM's about a strike being put on them.
-   * @private
-   * @param {GuildMember} member
-   * @param {number} count
-   * @param {string} reason
-   * @returns {EmbedBuilder}
-   */
-  private getNotificationEmbed(member: GuildMember, count: number, reason: string): EmbedBuilder {
-    return new EmbedBuilder()
-      .setColor('#ff0000')
-      .setAuthor({ name: member.user.tag, iconURL: member.user.displayAvatarURL() })
-      .setDescription(stripIndent(`
-        You have been striked in ${bold(member.guild.name)}
-        This is strike number ${bold(count)}. After ${bold('3')} strikes you will be eligible for punishment. This is the reason for your strike:
-        ${bold(reason)}`
-      ));
-  }
-
-  /**
-   * @description Notifies a member in a DM with a notification embed.
-   * @private
-   * @async
-   * @param {GuildMember} member
-   * @param {number} count
-   * @param {string} reason
-   * @returns {Promise<void>}
-   */
-  private async notifyMemberInDMs(member: GuildMember, count: number, reason: string): Promise<void> {
-    try {
-      const dmChannel = await member.createDM();
-      await dmChannel.send({ embeds: [ this.getNotificationEmbed(member, count, reason) ] });
-    } catch (err) {
-      throw err
-    }
-  }
-
-  /**
-   * @description Notifies a member in the servers bot channel.
-   * @private
-   * @async
-   * @param {GuildMember} member
-   * @param {number} count
-   * @param {string} reason
-   * @returns {Promise<void>}
-   */
-  private async notifyMemberInBotChannel(member: GuildMember, count: number, reason: string): Promise<void> {
-    const cfg = await this.configManager.get(member.guild.id);
-
-    if(cfg?.botSpamChannelID) {
-      const channel = await member.guild.channels.fetch(cfg.botSpamChannelID) as TextChannel;
-
-      channel.send({
-        content: member.toString(),
-        allowedMentions: { users: [member.id] },
-        embeds: [ this.getNotificationEmbed(member, count, reason) ]
-      });
     }
   }
 
@@ -396,7 +340,7 @@ export class DiscordLogger {
   public async handleChannelCreate(channel: GuildChannel): Promise<void> {
     const { type: rawType, name, guildId, guild, client } = channel;
 
-    if([ChannelType.GuildPrivateThread, ChannelType.GuildPublicThread, ChannelType.GuildNewsThread, ChannelType.DM].includes(rawType)) { // Ignore threads and DMs
+    if([ChannelType.PrivateThread, ChannelType.PublicThread, ChannelType.AnnouncementThread, ChannelType.DM].includes(rawType)) { // Ignore threads and DMs
       return;
     }
 
@@ -428,7 +372,7 @@ export class DiscordLogger {
         `);
       }
 
-      const embed = new LogEmbed(0)
+      const embed = new LogEmbed(DiscordLoggerLevel.INFO)
         .setAuthor({ name: authorStr, iconURL: this.getAvatarFromAuditLog(auditLogEntry) })
         .setDescription(descriptionStr);
 
@@ -463,7 +407,7 @@ export class DiscordLogger {
         ? `Category "${name}" has been deleted by ${tag}`
         : `${type} channel "${name}" has been deleted by ${tag}`;
 
-      const embed = new LogEmbed(1)
+      const embed = new LogEmbed(DiscordLoggerLevel.MODERATION_INFO)
         .setAuthor({ name: authorStr, iconURL: this.getAvatarFromAuditLog(auditLogEntry) });
 
       this.log(client, guildId, { embeds: [ embed ] });
@@ -555,7 +499,7 @@ export class DiscordLogger {
 
       const authorStr = `${tag} made ${diff.length} ${changePlural} to "${oldChannel.name}"`;
 
-      const embed = new LogEmbed(1)
+      const embed = new LogEmbed(DiscordLoggerLevel.MODERATION_INFO)
         .setAuthor({ name: authorStr, iconURL: this.getAvatarFromAuditLog(auditLogEntry) })
         .setDescription(diff.length ? diff.join('\n') : 'Unsupported changes');
 
@@ -587,7 +531,7 @@ export class DiscordLogger {
 
       const authorStr = `The emote "${name}" has been created by ${author.tag}`;
 
-      const embed = new LogEmbed(0)
+      const embed = new LogEmbed(DiscordLoggerLevel.INFO)
         .setAuthor({ name: authorStr, iconURL: author.displayAvatarURL() })
         .setImage(url)
 
@@ -619,7 +563,7 @@ export class DiscordLogger {
 
       const authorStr = `The emote "${name}" has been deleted by ${tag}`;
 
-      const embed = new LogEmbed(1)
+      const embed = new LogEmbed(DiscordLoggerLevel.MODERATION_INFO)
         .setAuthor({ name: authorStr, iconURL: this.getAvatarFromAuditLog(auditLogEntry) })
         .setImage(url);
 
@@ -627,7 +571,7 @@ export class DiscordLogger {
       this.assignAuditLogEntry(guildID, auditLogEntry);
     } catch(err) {
       if(err.code === 10014 && err.httpStataus === 404) {
-        const embed = new LogEmbed(2)
+        const embed = new LogEmbed(DiscordLoggerLevel.MODERATION_LIFTED)
           .setDescription('An emote was deleted but I was unable to retrieve any information about it!');
 
         this.log(client, guildID, { embeds: [ embed ] });
@@ -658,7 +602,7 @@ export class DiscordLogger {
 
         const authorStr = `The emote "${oldName}" has been re-named to "${newName}" by ${tag}`;
 
-        const embed = new LogEmbed(0)
+        const embed = new LogEmbed(DiscordLoggerLevel.INFO)
           .setAuthor({ name: authorStr, iconURL: this.getAvatarFromAuditLog(auditLogEntry) })
           .setImage(newEmote.url);
 
@@ -689,7 +633,7 @@ export class DiscordLogger {
 
       const authorStr = `"${user.tag}" was banned for "${parsedReason}" by ${tag}`;
 
-      const embed = new LogEmbed(2)
+      const embed = new LogEmbed(DiscordLoggerLevel.MODERATION_LIFTED)
         .setAuthor({ name: authorStr })
         .setDescription(`${bold('UserID')}: ${inlineCodeBlock(user.id)}`);
 
@@ -721,7 +665,7 @@ export class DiscordLogger {
       const tag = this.getTagFromAuditLog(auditLogEntry);
       const authorStr = `"${user.tag}" has been un-banned by ${tag}`;
 
-      const embed = new LogEmbed(2)
+      const embed = new LogEmbed(DiscordLoggerLevel.MODERATION_LIFTED)
         .setAuthor({ name: authorStr, iconURL: this.getAvatarFromAuditLog(auditLogEntry) })
         .setDescription(stripIndent(`
           ${bold('UserID')}: ${inlineCodeBlock(user.id)}
@@ -765,7 +709,7 @@ export class DiscordLogger {
         ${bold('ID')}: ${inlineCodeBlock(id)}
       `);
 
-      const embed = new LogEmbed(0)
+      const embed = new LogEmbed(DiscordLoggerLevel.INFO)
         .setAuthor({ name: authorStr, iconURL: this.getAvatarFromAuditLog(auditLogEntry) })
         .setDescription(descriptionStr);
 
@@ -793,7 +737,7 @@ export class DiscordLogger {
 
       const auditLogEntry = await this.findAuditLog(guild, AuditLogEvent.RoleDelete);
 
-      const embed = new LogEmbed(0)
+      const embed = new LogEmbed(DiscordLoggerLevel.INFO)
         .setAuthor({ name: `The role "${name}" was just deleted by ${this.getTagFromAuditLog(auditLogEntry)}`, iconURL: this.getAvatarFromAuditLog(auditLogEntry) })
         .setDescription(stripIndent(`
           ${bold('Color')}: ${inlineCodeBlock(hexColor)}
@@ -876,7 +820,7 @@ export class DiscordLogger {
         diff[diff.length] = `Changed permissions:\n  - ${permArr.join('\n  - ')}`;
       }
 
-      const embed = new LogEmbed(0)
+      const embed = new LogEmbed(DiscordLoggerLevel.INFO)
         .setAuthor({ name: `The role "${oldRole.name}" was just edited by ${this.getTagFromAuditLog(auditLogEntry)}`, iconURL: this.getAvatarFromAuditLog(auditLogEntry) })
         .setDescription(diff
           .map(str => str.length >= 45 ? `${str}\n` : str)
@@ -907,7 +851,7 @@ export class DiscordLogger {
         ?? await sticker.fetchUser()
         ?? auditLogEntry.executor;
 
-      const embed = new LogEmbed(0)
+      const embed = new LogEmbed(DiscordLoggerLevel.INFO)
         .setAuthor({ name: `The sticker "${name} was just created by "${author.tag}`, iconURL: author.displayAvatarURL() })
         .setImage(url)
         .setDescription(stripIndent(`
@@ -953,7 +897,7 @@ export class DiscordLogger {
         diff[count++] = `Changed description:\n${cursive(`"${oldDescription}"`)}\n${cursive(`"${newDescription}"`)}`;
       }
 
-      const embed = new LogEmbed(1)
+      const embed = new LogEmbed(DiscordLoggerLevel.MODERATION_INFO)
         .setAuthor({ name: `The sticker "${oldSticker.name}" was just edited by ${this.getTagFromAuditLog(auditLogEntry)}`, iconURL: this.getAvatarFromAuditLog(auditLogEntry) })
         .setDescription(diff
           .map(str => str.length >= 45 ? `${str}\n` : str)
@@ -980,7 +924,7 @@ export class DiscordLogger {
     try {
       const auditLogEntry = await this.findAuditLog(guild, AuditLogEvent.StickerDelete);
 
-      const embed = new LogEmbed(1)
+      const embed = new LogEmbed(DiscordLoggerLevel.MODERATION_INFO)
         .setAuthor({ name: `The sticker "${name}" was just deleted by ${this.getTagFromAuditLog(auditLogEntry)}`, iconURL: this.getAvatarFromAuditLog(auditLogEntry) })
         .setDescription(stripIndent(`
           ${bold('Format')}: ${inlineCodeBlock(format)}
@@ -1014,17 +958,15 @@ export class DiscordLogger {
       const cfg = await this.configManager.get(guildId);
       this.cacheCFG(cfg);
 
-      // Avoid the new voice channel text chats (atleast i think it does)
-      if(
-        (cfg && message.channel.id === cfg.logChannelID)  ||
-        !(message.channel instanceof TextChannel)         ||
-        cfg.ignoredChannelIDs.includes(message.channelId) ||
-        !message.guild
+      if((cfg && cfg.logChannelIDs.includes(message.channelId))
+        || cfg.ignoredChannelIDs.includes(message.channelId)                
+        || !(message.channel instanceof TextChannel)                        
+        || !message.guild
       ) return;
 
       const auditLogEntry = await this.findAuditLog(message.guild, AuditLogEvent.MessageDelete);
 
-      const embed = new LogEmbed(0)
+      const embed = new LogEmbed(DiscordLoggerLevel.INFO)
         .setAuthor({ name: `Deleted message from ${message.author.tag}`, iconURL: message.author.displayAvatarURL() })
         .setDescription(`${bold('Channel')}: ${inlineCodeBlock(message.channel.name)}`)
 
@@ -1138,7 +1080,7 @@ export class DiscordLogger {
         console.log(mediaURLs);
       }
 
-      const firstEmbed = new LogEmbed(0)
+      const firstEmbed = new LogEmbed(DiscordLoggerLevel.INFO)
         .setAuthor({ name: `Message from ${message.author.tag}`, iconURL: message.author.displayAvatarURL() })
         .setDescription(stripIndent(`
           ${bold('Author')}: ${inlineCodeBlock(message.author.tag)}
@@ -1169,14 +1111,16 @@ export class DiscordLogger {
               firstEmbedHasAttachment = true;
             } else {
               messageObject.embeds.push(
-                new LogEmbed(3)
+                new LogEmbed()
+                  .setCustomLevel(3)
                   .setImage(`attachment://${attachment.name}`)
                   .setAuthor({ name: `${message.author.tag}`, iconURL: message.author.displayAvatarURL() })
               )
             }
           } else {
             messageObject.embeds.push(
-              new LogEmbed(3)
+              new LogEmbed()
+                .setCustomLevel(3)
                 .setDescription(stripIndent(`
                   ${bold('ID')}: ${inlineCodeBlock(attachmentID)}
                   ${bold('URL')}: ${inlineCodeBlock(attachment.url)}
@@ -1210,7 +1154,8 @@ export class DiscordLogger {
             if(TENOR_REGEX.test(url)) {
               messageObject.files.push(`${url}.gif`);
             } else {
-              const embed = new LogEmbed(3)
+              const embed = new LogEmbed()
+                .setCustomLevel(3)
                 .setAuthor({ name: message.author.tag, iconURL: message.author.displayAvatarURL() })
                 .setImage(url)
                 .setDescription(stripIndent(`
@@ -1250,7 +1195,7 @@ export class DiscordLogger {
       if(timedOut) {
         const endDate = newMember.communicationDisabledUntil;
 
-        const embed = new LogEmbed(2)
+        const embed = new LogEmbed(DiscordLoggerLevel.MODERATION_LIFTED)
           .setAuthor({ name: `${moderator.globalName} has timed out ${newMember.user.globalName}`, iconURL: moderator.displayAvatarURL() })
           .setDescription(stripIndent(`
             ${bold('Moderator')}: ${inlineCodeBlock(moderator.globalName)}
@@ -1261,7 +1206,7 @@ export class DiscordLogger {
         return this.log(client, guild.id, { embeds: [ embed ] });
       }
 
-      const embed = new LogEmbed(2)
+      const embed = new LogEmbed(DiscordLoggerLevel.MODERATION_LIFTED)
         .setAuthor({ name: `${moderator.globalName} has removed a timeout from ${newMember.user.globalName}`, iconURL: moderator.displayAvatarURL() })
         .setDescription(stripIndent(`
           ${bold('Moderator')}: ${inlineCodeBlock(moderator.globalName)}
@@ -1269,6 +1214,7 @@ export class DiscordLogger {
         `))
 
       this.log(client, guild.id, { embeds: [ embed ] });
+      this.assignAuditLogEntry(guild.id, auditLogEntry);
     } catch (err) {
       this.handleError(err);
     }
@@ -1289,7 +1235,7 @@ export class DiscordLogger {
       const auditLogEntry = await this.findAuditLog(guild, AuditLogEvent.MemberKick);
 
       if(auditLogEntry?.target?.id === member.user.id) {
-        const embed = new LogEmbed(2)
+        const embed = new LogEmbed(DiscordLoggerLevel.MODERATION_LIFTED)
           .setAuthor({ name: `${member.user.tag} was just kicked by ${auditLogEntry.executor.tag}` })
           .setDescription(`${bold('Reason')}\n${bold(auditLogEntry.reason || 'NO_REASON')}`)
           .setFooter({ text: 'Sometimes the user kicking is inaccurate as there is no new audit log entry' });

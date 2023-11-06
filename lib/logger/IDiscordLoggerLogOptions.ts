@@ -10,6 +10,8 @@ import {
 } from "discord.js";
 
 export interface IDiscordLoggerLogOptions {
+  pingModRole?: boolean;
+  content?: string;
   embeds: Array<LogEmbed>;
   files?: Array<
     BufferResolvable
@@ -19,6 +21,4 @@ export interface IDiscordLoggerLogOptions {
       | AttachmentBuilder
       | AttachmentPayload
   >;
-  pingModRole?: boolean;
-  content?: string;
 }

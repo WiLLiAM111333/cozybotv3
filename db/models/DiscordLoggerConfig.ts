@@ -5,8 +5,8 @@ export const DiscordLoggerConfig = model('discordlogger_configs', new Schema({
     type: String,
     required: true
   },
-  logChannelID: {
-    type: String,
+  logChannelIDs: {
+    type: Array,
     required: false
   },
   modRoleID: {

@@ -1,33 +1,41 @@
 import { ColorResolvable, EmbedBuilder, EmbedData, APIEmbed } from 'discord.js';
 
 /**
- * Handles the colorization of the embeds being sent out of the class `DiscordLogger`
+ * @description Handles the colorization of the embeds being sent out of the class `DiscordLogger`
  */
 export class LogEmbed extends EmbedBuilder {
   /**
-   * @param {DiscordLoggerLevel} level
+   * @public
+   * @type {TDiscordLoggerLevel}
+   */
+  public level: TDiscordLoggerLevel;
+  /**
+   * @param {TDiscordLoggerLevel} level
    * @param {EmbedData | APIEmbed} [data={}]
    */
-  constructor(level: DiscordLoggerLevel, data?: EmbedData | APIEmbed) {
+  constructor(level?: TDiscordLoggerLevel, data?: EmbedData | APIEmbed) {
     super(data);
 
-    this.setColor(this.getColor(level));
+    this.level = level;
+    
+    if(level) {
+      this.setColor(this.colors[level]);
+    }
+
     this.setTimestamp(new Date())
   }
 
-  /**
-   * Returns the color of the given level
-   * @param {DiscordLoggerLevel} level
-   * @returns {ColorResolvable}
-   */
-  private getColor(level: DiscordLoggerLevel): ColorResolvable {
-    const colors: Array<ColorResolvable> = [
+  private get colors(): Array<ColorResolvable> {
+    return [
       '#00a35a',
       '#ffce5c',
       '#ff0000',
       '#00af9c'
     ];
+  }
 
-    return colors[level];
+  public setCustomLevel(level: LogEmbedExtendedLevels): this {
+    this.setColor(this.colors[level])
+    return this;
   }
 }
