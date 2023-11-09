@@ -1,0 +1,1 @@
+type MappedInteraction = 'modals' | 'buttons'

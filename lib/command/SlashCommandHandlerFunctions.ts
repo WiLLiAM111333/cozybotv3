@@ -65,7 +65,10 @@ const getCommands = async (path: string = basePath, commands: Array<RESTPostAPIC
       }
 
       const commandModule: Command = new (await import(newPath)).default;
-      commands[commands.length] = commandModule.toJSON();
+
+      if(commandModule.name === 'mod-application') {
+        commands[commands.length] = commandModule.toJSON();
+      }
     }
 
     return commands;

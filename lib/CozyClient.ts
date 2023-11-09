@@ -2,15 +2,16 @@ import { Client, ClientOptions } from 'discord.js';
 import { registerCommands } from './command/SlashCommandHandlerFunctions';
 import { loadEvents } from './event/loadEvents';
 import { DiscordLogger } from './logger/DiscordLogger';
+import { InteractionHandler } from './interaction/InteractionHandler';
 
 export class CozyClient extends Client {
-  public prefix: string; // TODO: Swap to dynamic prefix
+  public interactionHandler: InteractionHandler;
   public logger: DiscordLogger;
   
   public constructor(options: ClientOptions) {
     super(options);
 
-    this.prefix = ';'
+    this.interactionHandler = new InteractionHandler();
     this.logger = new DiscordLogger();
   }
 
@@ -19,7 +20,7 @@ export class CozyClient extends Client {
       await this.login(token);
       
       await loadEvents(this);
-      // await registerCommands();
+      await registerCommands();
     } catch (err) {
       throw err;
     }
